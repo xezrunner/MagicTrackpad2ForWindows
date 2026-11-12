@@ -15,6 +15,11 @@ namespace AmtPtpControlPanel.WinUI3
     {
         private bool _updatingLanguageCombo;
 
+        // A driver that never answers must not block the window, tray, or Quit,
+        // so driver calls run off the UI thread, one at a time.
+        private Task _deviceIo = Task.CompletedTask;
+        private Task _dialog = Task.CompletedTask;
+
         public MainWindow()
         {
             InitializeComponent();
@@ -60,6 +65,7 @@ namespace AmtPtpControlPanel.WinUI3
 
             RootGrid.Loaded += MainWindow_Loaded;
             RootGrid.ActualThemeChanged += (s, e) => UpdateTitleBarButtonColors();
+            AppWindow.Closing += MainWindow_Closing;
         }
 
         private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
@@ -68,6 +74,7 @@ namespace AmtPtpControlPanel.WinUI3
             ApplyLocalization();
             PopulateLanguageCombo();
             LoadSettings();
+            LoadSmoothing();
 
             await UpdateBatteryAsync(showErrorOnFailure: false);
         }
@@ -180,8 +187,16 @@ namespace AmtPtpControlPanel.WinUI3
             BatteryTitle.Text = T("Section.Battery", "Battery");
             UpdateBatteryButton.Content = T("ctlBatteryUpdate", "Update Battery");
 
+            SmoothingTitle.Text = T("Section.Smoothing", "Smoothing");
+            EnableSmoothing.Content = T("ctlSmoothingEnable", "Enable smoothing");
+            SmoothingRateLabel.Text = T("ctlSmoothingRate", "Update rate");
+            SmoothingAutomatic.Content = T("ctlSmoothingAutomatic", "Automatic (display)");
+            SmoothingScopeText.Text = T("ctlSmoothingScope", "Only affects the Magic Trackpad 2. Keeps running in the tray after you close this window.");
+            UpdateSmoothingStatus();
+
             TouchpadSettingsButton.Content = T("ctlTouchpadSettings", "Windows Touchpad Settings");
             ApplyButton.Content = T("ctlApply", "Apply");
+            QuitButton.Content = T("ctlQuit", "Quit");
             GitHubLink.Content = T("Link.GitHub", "Project on GitHub");
         }
 
@@ -290,10 +305,17 @@ namespace AmtPtpControlPanel.WinUI3
             ApplyButton.IsEnabled = false;
             try
             {
+                await ApplySmoothingAsync();
                 if (await SaveSettingsAsync())
                 {
-                    UsbDevice.ReloadSettings();
-                    BtDevice.SendIoctl(BtDevice.IOCTL_RELOAD_SETTINGS);
+                    // The reload runs after any driver call in progress. If that call is stuck,
+                    // the reload waits with it, but Apply stays usable.
+                    _deviceIo = _deviceIo.ContinueWith(_ =>
+                    {
+                        UsbDevice.ReloadSettings();
+                        BtDevice.SendIoctl(BtDevice.IOCTL_RELOAD_SETTINGS);
+                    }, TaskScheduler.Default);
+                    await Task.WhenAny(_deviceIo, Task.Delay(2000));
                 }
             }
             finally
@@ -324,11 +346,23 @@ namespace AmtPtpControlPanel.WinUI3
 
         private async Task UpdateBatteryAsync(bool showErrorOnFailure)
         {
-            uint level;
-            if (BtDevice.SendIoctl(BtDevice.IOCTL_GET_BATTERY, out level))
-                ShowBattery("Bluetooth", level);
-            else if (UsbDevice.GetBattery(out level))
-                ShowBattery("USB", level);
+            if (!_deviceIo.IsCompleted)
+                return;
+
+            uint level = 0;
+            Task<string?> read = Task.Run(() =>
+            {
+                if (BtDevice.SendIoctl(BtDevice.IOCTL_GET_BATTERY, out level))
+                    return "Bluetooth";
+                if (UsbDevice.GetBattery(out level))
+                    return "USB";
+                return (string?)null;
+            });
+            _deviceIo = read;
+
+            string? source = await read;
+            if (source != null)
+                ShowBattery(source, level);
             else if (showErrorOnFailure)
                 await ShowErrorAsync(
                     T("Message.Error", "Error"),
@@ -457,7 +491,19 @@ namespace AmtPtpControlPanel.WinUI3
                 DefaultButton = ContentDialogButton.Close
             };
 
-            await dialog.ShowAsync();
+            // A driver call can finish while another dialog is open, and only one can show at a time.
+            Task previous = _dialog;
+            TaskCompletionSource closed = new TaskCompletionSource();
+            _dialog = closed.Task;
+            try
+            {
+                await previous;
+                await dialog.ShowAsync();
+            }
+            finally
+            {
+                closed.SetResult();
+            }
         }
     }
 }

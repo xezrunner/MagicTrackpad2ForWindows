@@ -67,6 +67,9 @@ dotnet publish AmtPtpControlPanel.WinUI3.csproj -p:PublishProfile=win-arm64
 | --- | --- |
 | `App.xaml` / `App.xaml.cs` | WinUI 3 application entry point |
 | `MainWindow.xaml` / `MainWindow.xaml.cs` | Main settings window and UI logic |
+| `MainWindow.Smoothing.cs` | Pointer smoothing section, tray icon, and Quit |
+| `Smoothing/` | Pointer smoothing input hook, output clock, recovery, and saved choice |
+| `NativeTray.cs` | Notification area icon and menu |
 | `SettingsService.cs` | Reads/writes the UMDF + HID filter registry parameters |
 | `DeviceInterop.cs` | Named-pipe (USB) and `DeviceIoControl` (Bluetooth) calls |
 | `LocalizationManager.cs` | Loads embedded translations and persists the UI language in the registry |
