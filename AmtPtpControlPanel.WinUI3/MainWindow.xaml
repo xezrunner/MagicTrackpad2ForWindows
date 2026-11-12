@@ -100,6 +100,31 @@
                     </StackPanel>
                 </Border>
 
+                <Border Style="{StaticResource CardStyle}">
+                    <StackPanel Spacing="12">
+                        <TextBlock x:Name="SmoothingTitle" Style="{StaticResource CardTitleStyle}" Text="Smoothing" />
+                        <ToggleSwitch x:Name="SmoothingToggle" Header="Enable smoothing" IsOn="False"
+                                      IsEnabled="False" Toggled="SmoothingToggle_Toggled" />
+                        <ComboBox x:Name="SmoothingRate" Header="Update rate" Width="220"
+                                  IsEnabled="False" SelectedIndex="0" SelectionChanged="SmoothingRate_SelectionChanged">
+                            <ComboBoxItem x:Name="SmoothingAutomatic" Content="Automatic (display)" Tag="0" />
+                            <ComboBoxItem Content="60 Hz" Tag="60" />
+                            <ComboBoxItem Content="90 Hz" Tag="90" />
+                            <ComboBoxItem Content="120 Hz" Tag="120" />
+                            <ComboBoxItem Content="144 Hz" Tag="144" />
+                            <ComboBoxItem Content="165 Hz" Tag="165" />
+                            <ComboBoxItem Content="240 Hz" Tag="240" />
+                            <ComboBoxItem Content="360 Hz" Tag="360" />
+                            <ComboBoxItem Content="500 Hz" Tag="500" />
+                            <ComboBoxItem Content="1000 Hz" Tag="1000" />
+                        </ComboBox>
+                        <TextBlock x:Name="SmoothingScope" Text="Affects all mice. Closing this window keeps smoothing in the tray."
+                                   TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                        <TextBlock x:Name="SmoothingStatus" Text="Stopped" TextWrapping="Wrap"
+                                   AutomationProperties.LiveSetting="Polite" />
+                    </StackPanel>
+                </Border>
+
                 <!-- macOS click options -->
                 <Expander
                     HorizontalAlignment="Stretch"
@@ -397,6 +422,7 @@
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
 
             <HyperlinkButton
@@ -419,6 +445,11 @@
                 Click="ApplyButton_Click"
                 Content="Apply"
                 Style="{StaticResource AccentButtonStyle}" />
+            <Button
+                x:Name="QuitButton"
+                Grid.Column="3"
+                Click="QuitButton_Click"
+                Content="Quit" />
         </Grid>
 
     </Grid>

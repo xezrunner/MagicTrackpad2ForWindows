@@ -1,6 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Localization>
   <Language id="en">
+    <String id="Section.Smoothing">Smoothing</String>
+    <String id="Smoothing.Enable">Enable smoothing</String>
+    <String id="Smoothing.Rate">Update rate</String>
+    <String id="Smoothing.Automatic">Automatic (display)</String>
+    <String id="Smoothing.Scope">Affects all mice. Closing this window keeps smoothing in the tray.</String>
+    <String id="Smoothing.Quit">Quit</String>
+    <String id="Smoothing.TrayOpen">&amp;Open</String>
+    <String id="Smoothing.TrayEnable">&amp;Enable smoothing</String>
+    <String id="Smoothing.TrayCopyDiagnostics">Copy &amp;diagnostics</String>
+    <String id="Smoothing.TrayQuit">&amp;Quit</String>
+    <String id="Smoothing.TrayName">Magic Trackpad 2</String>
+    <String id="Smoothing.Paused">Waiting for Windows…</String>
+    <String id="Smoothing.OwnedElsewhere">Waiting for another instance…</String>
+    <String id="Smoothing.Recovering">Reconnecting smoothing…</String>
+    <String id="Smoothing.RunningFallback">Running with timer fallback</String>
+    <String id="Smoothing.Stopping">Stopping…</String>
+    <String id="Smoothing.Running">Running</String>
+    <String id="Smoothing.Stopped">Stopped</String>
     <String id="Main">Magic Trackpad 2 Control Panel</String>
     <String id="Section.ClickFeedbackMacOS">MacOS click options</String>
     <String id="ctlMacOSClickOptions">Use macOS Click Options:</String>
