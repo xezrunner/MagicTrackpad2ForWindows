@@ -5,8 +5,14 @@ using System.Threading.Tasks;
 
 namespace AmtPtpControlPanel.WinUI3.Smoothing
 {
+    /// <summary>
+    /// One recorded interruption of a smoothing run.
+    /// </summary>
     internal readonly record struct SmoothingInterruption(DateTime Time, SmoothingStop Reason, string? Detail);
 
+    /// <summary>
+    /// Keeps smoothing in the requested state, restarting the worker after interruptions.
+    /// </summary>
     internal sealed class SmoothingController
     {
         private readonly PointerSmoothing _worker = new PointerSmoothing();
@@ -14,30 +20,109 @@ namespace AmtPtpControlPanel.WinUI3.Smoothing
         private readonly SemaphoreSlim _changed = new SemaphoreSlim(0, 1);
         private readonly SmoothingInterruption[] _history = new SmoothingInterruption[32];
         private Task? _loop;
-        private bool _enabled, _quit, _cleanupStalled, _environmentReady = true;
-        private int _rateHz, _version, _interruptions, _fallbackRate;
-        private SmoothingStop _lastReason;
-        private long _notBefore, _runningSince;
-        private bool _monitoringRun, _healthyRun;
 
-        internal bool Enabled { get { lock (_gate) return _enabled; } }
+        private bool _enabled;
+        private bool _quit;
+        private bool _cleanupStalled;
+        private bool _environmentReady = true;
+        private int _rateHz;
+        private int _version;
+        private int _interruptions;
+        private int _fallbackRate;
+        private SmoothingStop _lastReason;
+        private long _notBefore;
+        private long _runningSince;
+        private bool _monitoringRun;
+        private bool _healthyRun;
+
+        internal bool Enabled
+        {
+            get
+            {
+                lock (_gate)
+                    return _enabled;
+            }
+        }
+
         internal bool IsRunning => _worker.IsRunning;
+
         internal bool IsStopping => _worker.IsStopping;
-        internal bool IsPaused { get { lock (_gate) return _enabled && !_environmentReady; } }
-        internal bool UsingFallback { get { lock (_gate) return _fallbackRate != 0; } }
-        internal SmoothingStop LastReason { get { lock (_gate) return _lastReason; } }
-        internal int RecoveryFallbackRate { get { lock (_gate) return _rateHz == 0 ? (_fallbackRate != 0 ? _fallbackRate : _worker.ObservedRateHz) : 0; } }
-        internal bool HasHealthyRun { get { lock (_gate) return _healthyRun || (_monitoringRun && _worker.IsRunning && Stopwatch.GetElapsedTime(_runningSince).TotalSeconds >= 10); } }
-        internal bool RestartRequired { get { lock (_gate) return _cleanupStalled || _worker.StopReason == SmoothingStop.CleanupError; } }
+
+        internal bool IsPaused
+        {
+            get
+            {
+                lock (_gate)
+                    return _enabled && !_environmentReady;
+            }
+        }
+
+        internal bool UsingFallback
+        {
+            get
+            {
+                lock (_gate)
+                    return _fallbackRate != 0;
+            }
+        }
+
+        internal SmoothingStop LastReason
+        {
+            get
+            {
+                lock (_gate)
+                    return _lastReason;
+            }
+        }
+
+        internal int RecoveryFallbackRate
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    if (_rateHz != 0)
+                        return 0;
+
+                    return _fallbackRate != 0 ? _fallbackRate : _worker.ObservedRateHz;
+                }
+            }
+        }
+
+        internal bool HasHealthyRun
+        {
+            get
+            {
+                lock (_gate)
+                    return _healthyRun || (_monitoringRun && _worker.IsRunning && Stopwatch.GetElapsedTime(_runningSince).TotalSeconds >= 10);
+            }
+        }
+
+        internal bool RestartRequired
+        {
+            get
+            {
+                lock (_gate)
+                    return _cleanupStalled || _worker.StopReason == SmoothingStop.CleanupError;
+            }
+        }
 
         internal void Configure(bool enabled, int rateHz, int fallbackRate = 0, int delaySeconds = 0)
         {
-            if (rateHz != 0 && (rateHz < 60 || rateHz > 1000)) throw new ArgumentOutOfRangeException(nameof(rateHz));
-            if (fallbackRate != 0 && (rateHz != 0 || fallbackRate < 60 || fallbackRate > 1000)) throw new ArgumentOutOfRangeException(nameof(fallbackRate));
-            if (delaySeconds < 0 || delaySeconds > 60) throw new ArgumentOutOfRangeException(nameof(delaySeconds));
+            if (rateHz != 0 && (rateHz < 60 || rateHz > 1000))
+                throw new ArgumentOutOfRangeException(nameof(rateHz));
+
+            if (fallbackRate != 0 && (rateHz != 0 || fallbackRate < 60 || fallbackRate > 1000))
+                throw new ArgumentOutOfRangeException(nameof(fallbackRate));
+
+            if (delaySeconds < 0 || delaySeconds > 60)
+                throw new ArgumentOutOfRangeException(nameof(delaySeconds));
+
             lock (_gate)
             {
-                if (_quit || (_enabled == enabled && _rateHz == rateHz)) return;
+                if (_quit || (_enabled == enabled && _rateHz == rateHz))
+                    return;
+
                 _enabled = enabled;
                 _rateHz = rateHz;
                 _fallbackRate = fallbackRate;
@@ -46,7 +131,9 @@ namespace AmtPtpControlPanel.WinUI3.Smoothing
                 _lastReason = SmoothingStop.None;
                 _version++;
                 _ = _worker.StopAsync();
-                if (_changed.CurrentCount == 0) _changed.Release();
+                if (_changed.CurrentCount == 0)
+                    _changed.Release();
+
                 _loop ??= Task.Run(RunAsync);
             }
         }
@@ -59,7 +146,9 @@ namespace AmtPtpControlPanel.WinUI3.Smoothing
                 _enabled = false;
                 _version++;
                 _ = _worker.StopAsync(SmoothingStop.Closed);
-                if (_changed.CurrentCount == 0) _changed.Release();
+                if (_changed.CurrentCount == 0)
+                    _changed.Release();
+
                 return _loop ?? Task.CompletedTask;
             }
         }
@@ -68,12 +157,15 @@ namespace AmtPtpControlPanel.WinUI3.Smoothing
         {
             lock (_gate)
             {
-                if (_quit || (_environmentReady == ready && !reset)) return;
+                if (_quit || (_environmentReady == ready && !reset))
+                    return;
+
                 _environmentReady = ready;
                 _fallbackRate = 0;
                 _version++;
                 _ = _worker.StopAsync();
-                if (_changed.CurrentCount == 0) _changed.Release();
+                if (_changed.CurrentCount == 0)
+                    _changed.Release();
             }
         }
 
@@ -82,19 +174,24 @@ namespace AmtPtpControlPanel.WinUI3.Smoothing
             lock (_gate)
             {
                 int count = Math.Min(_interruptions, _history.Length);
-                var result = new SmoothingInterruption[count];
-                for (int i = 0; i < count; i++) result[i] = _history[(_interruptions - count + i) % _history.Length];
+                SmoothingInterruption[] result = new SmoothingInterruption[count];
+                for (int i = 0; i < count; i++)
+                    result[i] = _history[(_interruptions - count + i) % _history.Length];
+
                 return result;
             }
         }
 
         internal void RecordRestartFailure(string detail)
         {
-            lock (_gate) AppendInterruption(SmoothingStop.CleanupError, detail);
+            lock (_gate)
+                AppendInterruption(SmoothingStop.CleanupError, detail);
         }
 
-        private void AppendInterruption(SmoothingStop reason, string? detail) =>
+        private void AppendInterruption(SmoothingStop reason, string? detail)
+        {
             _history[_interruptions++ % _history.Length] = new SmoothingInterruption(DateTime.UtcNow, reason, detail);
+        }
 
         private async Task RetireAsync()
         {
@@ -107,9 +204,11 @@ namespace AmtPtpControlPanel.WinUI3.Smoothing
                     AppendInterruption(SmoothingStop.CleanupError, $"Worker cleanup exceeded one second after {_worker.StopReason}.");
                 }
             }
-            // NOTE: Escalate to process restart, but never abandon native ownership inside this process.
+
+            // Escalate to process restart, but never abandon native ownership inside this process.
             await cleanup.ConfigureAwait(false);
-            lock (_gate) _cleanupStalled = false;
+            lock (_gate)
+                _cleanupStalled = false;
         }
 
         private async Task RunAsync()
@@ -118,67 +217,114 @@ namespace AmtPtpControlPanel.WinUI3.Smoothing
             while (true)
             {
                 bool enabled;
-                int version, rate, recoveryDelay;
+                int version;
+                int rate;
+                int recoveryDelay;
                 lock (_gate)
                 {
-                    if (_quit) return;
+                    if (_quit)
+                        return;
+
                     enabled = _enabled && _environmentReady;
                     version = _version;
                     rate = _rateHz == 0 ? _fallbackRate : _rateHz;
                     recoveryDelay = (int)Math.Clamp(Math.Ceiling((_notBefore - Stopwatch.GetTimestamp()) * 1000.0 / Stopwatch.Frequency), 0, 60000);
                 }
-                // NOTE: Never overlap workers, including when native cleanup has not completed yet.
+
+                // Never overlap workers, including when native cleanup has not completed yet.
                 await RetireAsync().ConfigureAwait(false);
-                lock (_gate) { if (_quit) return; if (version != _version) continue; }
+                lock (_gate)
+                {
+                    if (_quit)
+                        return;
+
+                    if (version != _version)
+                        continue;
+                }
+
                 if (!enabled)
                 {
                     failures = 0;
                     await _changed.WaitAsync().ConfigureAwait(false);
                     continue;
                 }
+
                 if (RestartRequired)
                 {
                     await _changed.WaitAsync(1000).ConfigureAwait(false);
                     continue;
                 }
+
                 if (recoveryDelay > 0)
                 {
                     await _changed.WaitAsync(recoveryDelay).ConfigureAwait(false);
                     continue;
                 }
+
                 Task start;
                 lock (_gate)
                 {
-                    if (_quit || version != _version) continue;
+                    if (_quit || version != _version)
+                        continue;
+
                     start = _worker.StartAsync(rate);
                 }
                 await start.ConfigureAwait(false);
+
                 bool wasRunning = _worker.IsRunning;
                 long runningSince = Stopwatch.GetTimestamp();
-                lock (_gate) { _runningSince = runningSince; _monitoringRun = wasRunning; }
+                lock (_gate)
+                {
+                    _runningSince = runningSince;
+                    _monitoringRun = wasRunning;
+                }
+
                 while (_worker.IsRunning)
                 {
-                    lock (_gate) { if (_quit || version != _version) break; }
+                    lock (_gate)
+                    {
+                        if (_quit || version != _version)
+                            break;
+                    }
                     await _changed.WaitAsync(100).ConfigureAwait(false);
                 }
+
                 bool resetBackoff = wasRunning && Stopwatch.GetElapsedTime(runningSince).TotalSeconds >= 10;
-                lock (_gate) { _monitoringRun = false; _healthyRun |= resetBackoff; }
+                lock (_gate)
+                {
+                    _monitoringRun = false;
+                    _healthyRun |= resetBackoff;
+                }
+
                 SmoothingStop reason = _worker.StopReason;
                 await RetireAsync().ConfigureAwait(false);
                 lock (_gate)
                 {
-                    if (_quit) return;
-                    if (version != _version) { failures = 0; continue; }
+                    if (_quit)
+                        return;
+
+                    if (version != _version)
+                    {
+                        failures = 0;
+                        continue;
+                    }
+
                     if (reason != SmoothingStop.DuplicateOwner || reason != _lastReason)
                         AppendInterruption(reason, _worker.Error);
+
                     _lastReason = reason;
                     if (_rateHz == 0 && _fallbackRate == 0 && (reason == SmoothingStop.ClockError || reason == SmoothingStop.ClockStall ||
                         reason == SmoothingStop.StartupTimeout || reason == SmoothingStop.Unavailable))
                         _fallbackRate = _worker.ObservedRateHz;
+
                     if (reason == SmoothingStop.DisplayChanged || reason == SmoothingStop.SessionChanged ||
-                        reason == SmoothingStop.Suspended || reason == SmoothingStop.DisplayOff) _fallbackRate = 0;
+                        reason == SmoothingStop.Suspended || reason == SmoothingStop.DisplayOff)
+                        _fallbackRate = 0;
                 }
-                if (resetBackoff) failures = 0;
+
+                if (resetBackoff)
+                    failures = 0;
+
                 int delay = Math.Min(2000, 250 * (1 << Math.Min(failures++, 3)));
                 await _changed.WaitAsync(delay).ConfigureAwait(false);
             }
