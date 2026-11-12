@@ -100,31 +100,6 @@
                     </StackPanel>
                 </Border>
 
-                <Border Style="{StaticResource CardStyle}">
-                    <StackPanel Spacing="12">
-                        <TextBlock x:Name="SmoothingTitle" Style="{StaticResource CardTitleStyle}" Text="Smoothing" />
-                        <ToggleSwitch x:Name="SmoothingToggle" Header="Enable smoothing" IsOn="False"
-                                      IsEnabled="False" Toggled="SmoothingToggle_Toggled" />
-                        <ComboBox x:Name="SmoothingRate" Header="Update rate" Width="220"
-                                  IsEnabled="False" SelectedIndex="0" SelectionChanged="SmoothingRate_SelectionChanged">
-                            <ComboBoxItem x:Name="SmoothingAutomatic" Content="Automatic (display)" Tag="0" />
-                            <ComboBoxItem Content="60 Hz" Tag="60" />
-                            <ComboBoxItem Content="90 Hz" Tag="90" />
-                            <ComboBoxItem Content="120 Hz" Tag="120" />
-                            <ComboBoxItem Content="144 Hz" Tag="144" />
-                            <ComboBoxItem Content="165 Hz" Tag="165" />
-                            <ComboBoxItem Content="240 Hz" Tag="240" />
-                            <ComboBoxItem Content="360 Hz" Tag="360" />
-                            <ComboBoxItem Content="500 Hz" Tag="500" />
-                            <ComboBoxItem Content="1000 Hz" Tag="1000" />
-                        </ComboBox>
-                        <TextBlock x:Name="SmoothingScope" Text="Applies only to the Magic Trackpad 2. Closing this window keeps smoothing in the tray."
-                                   TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                        <TextBlock x:Name="SmoothingStatus" Text="Stopped" TextWrapping="Wrap"
-                                   AutomationProperties.LiveSetting="Polite" />
-                    </StackPanel>
-                </Border>
-
                 <!-- macOS click options -->
                 <Expander
                     HorizontalAlignment="Stretch"
@@ -348,6 +323,73 @@
                                 </Grid>
                             </Grid>
                         </RadioButton>
+                    </StackPanel>
+                    </Expander>
+
+                <!-- Pointer smoothing -->
+                <Expander
+                    HorizontalAlignment="Stretch"
+                    HorizontalContentAlignment="Stretch"
+                    IsExpanded="False">
+                        <Expander.Header>
+                            <StackPanel Orientation="Horizontal" Spacing="12" Padding="0,16,0,16">
+                                <Border Style="{StaticResource SettingsIconTileStyle}">
+                                    <FontIcon
+                                        Glyph="&#xE7C9;"
+                                        FontFamily="Segoe MDL2 Assets"
+                                        Foreground="{ThemeResource TextFillColorPrimaryBrush}"
+                                        HorizontalAlignment="Center"
+                                        VerticalAlignment="Center" />
+                                </Border>
+                                <TextBlock
+                                    x:Name="SmoothingTitle"
+                                    Margin="0"
+                                    Style="{StaticResource CardTitleStyle}"
+                                    VerticalAlignment="Center"
+                                    AutomationProperties.LiveSetting="Polite"
+                                    Text="Smoothing" />
+                            </StackPanel>
+                        </Expander.Header>
+                        <StackPanel Spacing="12">
+
+                        <StackPanel Orientation="Horizontal" Spacing="48">
+                            <CheckBox
+                                x:Name="EnableSmoothing"
+                                Content="Enable smoothing"
+                                IsEnabled="False"
+                                VerticalAlignment="Bottom" />
+
+                            <StackPanel Spacing="8">
+                                <TextBlock
+                                    x:Name="SmoothingRateLabel"
+                                    Style="{StaticResource BodyTextBlockStyle}"
+                                    Text="Update rate" />
+
+                                <ComboBox
+                                    x:Name="SmoothingRate"
+                                    MinWidth="180"
+                                    IsEnabled="False"
+                                    SelectedIndex="0">
+                                    <ComboBoxItem x:Name="SmoothingAutomatic" Content="Automatic (display)" Tag="0" />
+                                    <ComboBoxItem Content="60 Hz" Tag="60" />
+                                    <ComboBoxItem Content="90 Hz" Tag="90" />
+                                    <ComboBoxItem Content="120 Hz" Tag="120" />
+                                    <ComboBoxItem Content="144 Hz" Tag="144" />
+                                    <ComboBoxItem Content="165 Hz" Tag="165" />
+                                    <ComboBoxItem Content="240 Hz" Tag="240" />
+                                    <ComboBoxItem Content="360 Hz" Tag="360" />
+                                    <ComboBoxItem Content="500 Hz" Tag="500" />
+                                    <ComboBoxItem Content="1000 Hz" Tag="1000" />
+                                </ComboBox>
+                            </StackPanel>
+                        </StackPanel>
+
+                        <TextBlock
+                            x:Name="SmoothingScopeText"
+                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                            Style="{StaticResource CaptionTextBlockStyle}"
+                            TextWrapping="Wrap"
+                            Text="Only affects the Magic Trackpad 2. Keeps running in the tray after you close this window." />
                     </StackPanel>
                     </Expander>
 

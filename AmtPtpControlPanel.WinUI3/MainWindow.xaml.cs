@@ -2,42 +2,21 @@ using System;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
-using System.Text;
 using System.Threading.Tasks;
 using Microsoft.UI;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
-using Microsoft.UI.Xaml.Automation.Peers;
-using AmtPtpControlPanel.WinUI3.Smoothing;
-using AmtPtpControlPanel.WinUI3.Tray;
 
 namespace AmtPtpControlPanel.WinUI3
 {
     public sealed partial class MainWindow : Window
     {
         private bool _updatingLanguageCombo;
-        private readonly SmoothingController _smoothing = new SmoothingController();
-        private readonly SmoothingPowerPolicy _smoothingPower = new SmoothingPowerPolicy();
-        private readonly DispatcherTimer _smoothingTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
-        private bool _smoothingAvailable, _smoothingChecked, _updatingSmoothing, _closing, _closeReady;
-        private int _smoothingRateHz;
-        private readonly SmoothingRecovery? _recovery;
-        private readonly bool _backgroundLaunch;
-        private int _restartAttempt;
-        private NativeTray? _tray;
-        private bool _restarting;
-        private long _restartAfter;
-        private long _trayRetryAfter;
 
-        public MainWindow() : this(null, false) { }
-
-        internal MainWindow(SmoothingRecovery? recovery, bool backgroundLaunch)
+        public MainWindow()
         {
-            _recovery = recovery;
-            _backgroundLaunch = backgroundLaunch;
-            _restartAttempt = recovery?.Attempt ?? 0;
             InitializeComponent();
 
             SystemBackdrop = new MicaBackdrop();
@@ -81,8 +60,7 @@ namespace AmtPtpControlPanel.WinUI3
 
             RootGrid.Loaded += MainWindow_Loaded;
             RootGrid.ActualThemeChanged += (s, e) => UpdateTitleBarButtonColors();
-            _smoothingTimer.Tick += (s, e) => UpdateSmoothingStatus();
-            AppWindow.Closing += SmoothingWindow_Closing;
+            AppWindow.Closing += MainWindow_Closing;
         }
 
         private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
@@ -91,185 +69,9 @@ namespace AmtPtpControlPanel.WinUI3
             ApplyLocalization();
             PopulateLanguageCombo();
             LoadSettings();
-
-            _smoothingAvailable = await Task.Run(PointerSmoothing.IsAvailable);
-            _smoothingChecked = true;
-            if (_closing) return;
-            EnsureTray();
-            if (_recovery.HasValue && _smoothingAvailable)
-            {
-                SmoothingRecovery recovery = _recovery.Value;
-                _smoothingRateHz = recovery.RateHz;
-                _updatingSmoothing = true;
-                foreach (ComboBoxItem item in SmoothingRate.Items)
-                    if ((string)item.Tag == _smoothingRateHz.ToString(CultureInfo.InvariantCulture)) SmoothingRate.SelectedItem = item;
-                _updatingSmoothing = false;
-                _smoothingPower.SetEnabled(true);
-                _smoothing.Configure(true, _smoothingRateHz, recovery.FallbackHz, recovery.DelaySeconds);
-            }
-            if (_backgroundLaunch && _tray?.IsVisible == true) AppWindow.Hide();
-            else if (_backgroundLaunch) AppWindow.Show(false);
-            UpdateSmoothingStatus();
-            _smoothingTimer.Start();
+            await LoadSmoothingAsync();
 
             await UpdateBatteryAsync(showErrorOnFailure: false);
-        }
-
-        private void SmoothingToggle_Toggled(object sender, RoutedEventArgs e)
-        {
-            if (_updatingSmoothing || _closing) return;
-            SetSmoothingEnabled(SmoothingToggle.IsOn);
-        }
-
-        private void SmoothingRate_SelectionChanged(object sender, SelectionChangedEventArgs e)
-        {
-            if (!_smoothingChecked || _closing || _updatingSmoothing) return;
-            _restartAttempt = 0;
-            _smoothingRateHz = int.Parse((string)((ComboBoxItem)SmoothingRate.SelectedItem).Tag, CultureInfo.InvariantCulture);
-            _smoothing.Configure(_smoothing.Enabled, _smoothingRateHz);
-            UpdateSmoothingStatus();
-        }
-
-        private void SetSmoothingEnabled(bool enabled)
-        {
-            if (_closing || (enabled && (!_smoothingChecked || !_smoothingAvailable))) return;
-            _restartAttempt = 0;
-            if (enabled) _smoothingPower.SetEnabled(true);
-            _smoothing.Configure(enabled, _smoothingRateHz);
-            if (!enabled) _smoothingPower.SetEnabled(false);
-            UpdateSmoothingStatus();
-        }
-
-        private void UpdateSmoothingStatus()
-        {
-            if (!_smoothingChecked) return;
-            if (!_closing) EnsureTray();
-            if (_smoothing.HasHealthyRun) _restartAttempt = 0;
-            _smoothingPower.SetEnabled(_smoothing.Enabled);
-            var interval = TimeSpan.FromMilliseconds(AppWindow.IsVisible && _smoothing.Enabled ? 100 : 1000);
-            if (_smoothingTimer.Interval != interval) _smoothingTimer.Interval = interval;
-            _updatingSmoothing = true;
-            SmoothingToggle.IsOn = _smoothing.Enabled;
-            _updatingSmoothing = false;
-            SmoothingToggle.IsEnabled = _smoothingAvailable && !_closing && !_restarting;
-            SmoothingRate.IsEnabled = SmoothingToggle.IsEnabled;
-            string state = "Stopped";
-            if (!_smoothingAvailable) state = "Unavailable";
-            else if (_closing) state = "Stopping";
-            else if (_smoothing.Enabled)
-                state = _smoothing.IsPaused ? "Paused" :
-                    _smoothing.IsRunning ? (_smoothing.UsingFallback ? "RunningFallback" : "Running") :
-                    _smoothing.LastReason == SmoothingStop.DuplicateOwner ? "OwnedElsewhere" : "Recovering";
-            else if (_smoothing.IsStopping) state = "Stopping";
-            string fallback = state switch
-            {
-                "Unavailable" => "Smoothing is unavailable on this system.",
-                "Recovering" => "Reconnecting smoothing…",
-                "Paused" => "Waiting for Windows…",
-                "OwnedElsewhere" => "Waiting for another instance…",
-                "RunningFallback" => "Running with timer fallback",
-                "Running" => "Running",
-                "Stopping" => "Stopping…",
-                _ => "Stopped"
-            };
-            SetSmoothingStatus(T("Smoothing." + state, fallback));
-            _tray?.Update(SmoothingStatus.Text);
-            if (!_closing && _tray != null && !_tray.IsVisible && !AppWindow.IsVisible) AppWindow.Show(false);
-            if (_smoothing.Enabled && _smoothing.RestartRequired && !_restarting && Stopwatch.GetTimestamp() >= _restartAfter)
-                RestartForRecovery();
-        }
-
-        private void EnsureTray()
-        {
-            if (_tray != null || Stopwatch.GetTimestamp() < _trayRetryAfter) return;
-            _trayRetryAfter = Stopwatch.GetTimestamp() + Stopwatch.Frequency * 5;
-            try
-            {
-                _tray = new NativeTray(WinRT.Interop.WindowNative.GetWindowHandle(this), OpenFromTray,
-                    () => SetSmoothingEnabled(!_smoothing.Enabled), QuitAsync, () => _smoothing.Enabled,
-                    (ready, reset) => _smoothing.SetEnvironmentReady(ready, reset), CopySmoothingDiagnostics);
-            }
-            catch (System.ComponentModel.Win32Exception ex) { Debug.WriteLine("Tray startup: " + ex.Message); }
-        }
-
-        private void SetSmoothingStatus(string text)
-        {
-            if (SmoothingStatus.Text == text) return;
-            SmoothingStatus.Text = text;
-            FrameworkElementAutomationPeer.CreatePeerForElement(SmoothingStatus)?.RaiseAutomationEvent(AutomationEvents.LiveRegionChanged);
-        }
-
-        private void CopySmoothingDiagnostics()
-        {
-            var text = new StringBuilder();
-            text.AppendLine($"Enabled: {_smoothing.Enabled}; Running: {_smoothing.IsRunning}; Paused: {_smoothing.IsPaused}");
-            text.AppendLine($"Rate: {_smoothingRateHz}; Timer fallback: {_smoothing.UsingFallback}");
-            text.AppendLine($"Scheduling override: {_smoothingPower.IsApplied}; Scheduling error: {_smoothingPower.Error}");
-            foreach (var entry in _smoothing.GetInterruptions()) text.AppendLine($"{entry.Time:O} {entry.Reason}: {entry.Detail}");
-            var content = new Windows.ApplicationModel.DataTransfer.DataPackage();
-            content.SetText(text.ToString());
-            Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(content);
-            Windows.ApplicationModel.DataTransfer.Clipboard.Flush();
-        }
-
-        private void SmoothingWindow_Closing(AppWindow sender, AppWindowClosingEventArgs args)
-        {
-            if (_closeReady) return;
-            args.Cancel = true;
-            if (_tray?.IsVisible == true) AppWindow.Hide();
-            else if (AppWindow.Presenter is OverlappedPresenter presenter) presenter.Minimize();
-        }
-
-        private void OpenFromTray()
-        {
-            if (AppWindow.Presenter is OverlappedPresenter presenter && presenter.State == OverlappedPresenterState.Minimized)
-                presenter.Restore();
-            AppWindow.Show();
-            Activate();
-            UpdateSmoothingStatus();
-        }
-
-        private async Task QuitAsync()
-        {
-            if (_closing) return;
-            _closing = true;
-            SmoothingToggle.IsEnabled = false;
-            SmoothingRate.IsEnabled = false;
-            SetSmoothingStatus(T("Smoothing.Stopping", "Stopping…"));
-            // NOTE: Stop disables interception immediately. A stuck background clock must not prevent app exit.
-            Task shutdown = _smoothing.ShutdownAsync();
-            _smoothingPower.SetEnabled(false);
-            await Task.WhenAny(shutdown, Task.Delay(1000));
-            _smoothingTimer.Stop();
-            _tray?.Dispose();
-            _closeReady = true;
-            DispatcherQueue.TryEnqueue(() => Close());
-        }
-
-        private async void QuitButton_Click(object sender, RoutedEventArgs e) => await QuitAsync();
-
-        private void RestartForRecovery()
-        {
-            _restarting = true;
-            SmoothingToggle.IsEnabled = false;
-            SmoothingRate.IsEnabled = false;
-            SmoothingRecovery recovery = SmoothingRecovery.ForRestart(_smoothingRateHz, _smoothing.RecoveryFallbackRate, _restartAttempt);
-            try
-            {
-                // NOTE: Restart is needed only when a failed native cleanup prevents safe hook replacement.
-                _tray?.Dispose();
-                _tray = null;
-                var failure = Microsoft.Windows.AppLifecycle.AppInstance.Restart(recovery.Arguments);
-                _smoothing.RecordRestartFailure("Application restart returned: " + failure);
-            }
-            catch (Exception ex) { _smoothing.RecordRestartFailure("Application restart failed: " + ex.Message); }
-            finally
-            {
-                _restarting = false;
-                _restartAfter = Stopwatch.GetTimestamp() + Stopwatch.Frequency * 5;
-                _trayRetryAfter = 0;
-                if (!_closing) EnsureTray();
-            }
         }
 
         private void PopulateLanguageCombo()
@@ -378,17 +180,18 @@ namespace AmtPtpControlPanel.WinUI3
             LanguageLabel.Text = T("ctlLanguage", "UI language");
 
             BatteryTitle.Text = T("Section.Battery", "Battery");
-            SmoothingTitle.Text = T("Section.Smoothing", "Smoothing");
-            SmoothingToggle.Header = T("Smoothing.Enable", "Enable smoothing");
-            SmoothingRate.Header = T("Smoothing.Rate", "Update rate");
-            SmoothingAutomatic.Content = T("Smoothing.Automatic", "Automatic (display)");
-            SmoothingScope.Text = T("Smoothing.Scope", "Applies only to the Magic Trackpad 2. Closing this window keeps smoothing in the tray.");
-            QuitButton.Content = T("Smoothing.Quit", "Quit");
-            UpdateSmoothingStatus();
             UpdateBatteryButton.Content = T("ctlBatteryUpdate", "Update Battery");
+
+            SmoothingTitle.Text = T("Section.Smoothing", "Smoothing");
+            EnableSmoothing.Content = T("ctlSmoothingEnable", "Enable smoothing");
+            SmoothingRateLabel.Text = T("ctlSmoothingRate", "Update rate");
+            SmoothingAutomatic.Content = T("ctlSmoothingAutomatic", "Automatic (display)");
+            SmoothingScopeText.Text = T("ctlSmoothingScope", "Only affects the Magic Trackpad 2. Keeps running in the tray after you close this window.");
+            UpdateSmoothingStatus();
 
             TouchpadSettingsButton.Content = T("ctlTouchpadSettings", "Windows Touchpad Settings");
             ApplyButton.Content = T("ctlApply", "Apply");
+            QuitButton.Content = T("ctlQuit", "Quit");
             GitHubLink.Content = T("Link.GitHub", "Project on GitHub");
         }
 
@@ -501,6 +304,7 @@ namespace AmtPtpControlPanel.WinUI3
                 {
                     UsbDevice.ReloadSettings();
                     BtDevice.SendIoctl(BtDevice.IOCTL_RELOAD_SETTINGS);
+                    await ApplySmoothingAsync();
                 }
             }
             finally

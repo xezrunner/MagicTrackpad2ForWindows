@@ -15,6 +15,7 @@ namespace AmtPtpControlPanel.WinUI3
 
         protected override void OnLaunched(LaunchActivatedEventArgs args)
         {
+            // A recovery restart resumes smoothing and starts in the tray.
             string[] arguments = System.Environment.GetCommandLineArgs();
             SmoothingRecovery? recovery = SmoothingRecovery.Parse(arguments);
             bool background = recovery.HasValue || System.Array.IndexOf(arguments, "--background") >= 0;
@@ -25,8 +26,15 @@ namespace AmtPtpControlPanel.WinUI3
             window.AppWindow.Resize(new Windows.Graphics.SizeInt32(1121, 774));
 
             _window = window;
-            if (background) { window.AppWindow.Show(false); window.AppWindow.Hide(); }
-            else window.Activate();
+            if (background)
+            {
+                window.AppWindow.Show(false);
+                window.AppWindow.Hide();
+            }
+            else
+            {
+                window.Activate();
+            }
         }
     }
 }
