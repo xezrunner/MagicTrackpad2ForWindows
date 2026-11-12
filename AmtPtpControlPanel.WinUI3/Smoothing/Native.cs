@@ -19,6 +19,12 @@ namespace AmtPtpControlPanel.WinUI3.Smoothing
         internal const uint MiddleDown = 0x207, MiddleUp = 0x208, XDown = 0x20b, XUp = 0x20c;
         internal const uint Injected = 1, AbsoluteMove = 0x8000 | 0x4000 | 1;
         internal const uint MonitorDefaultToNull = 0;
+        internal const uint RawInput = 0xff, RawInputHeaderCommand = 0x10000005, RawInputDataCommand = 0x10000003, RawDeviceInfoCommand = 0x2000000b;
+        internal const uint RawMouseType = 0, RawHidType = 2, RawInputSink = 0x100, RawInputRemove = 1;
+        internal const uint RawHeaderSize = 24, RawMouseSize = 48, RawDeviceInfoSize = 32;
+        // NOTE: Both MT2FW drivers report this vendor ID for the trackpad's PTP collection.
+        internal const uint TrackpadVendor = 0x8910;
+        internal const ushort DigitizerPage = 0x0d, TouchpadUsage = 0x05, DesktopPage = 0x01, MouseUsage = 0x02;
         [UnmanagedFunctionPointer(CallingConvention.Winapi)]
         internal delegate nint HookProc(int code, nuint message, nint data);
         [UnmanagedFunctionPointer(CallingConvention.Winapi)]
@@ -40,6 +46,23 @@ namespace AmtPtpControlPanel.WinUI3.Smoothing
         {
             internal nint Window; internal uint Id; internal nuint WParam; internal nint LParam;
             internal uint Time; internal Point Point; internal uint Private;
+        }
+        [StructLayout(LayoutKind.Sequential)]
+        internal struct RawInputDevice { internal ushort UsagePage, Usage; internal uint Flags; internal nint Target; }
+        [StructLayout(LayoutKind.Sequential)]
+        internal struct RawHeader { internal uint Type, Size; internal nint Device; internal nuint WParam; }
+        [StructLayout(LayoutKind.Sequential)]
+        internal struct RawMouse
+        {
+            internal RawHeader Header;
+            internal ushort Flags, Padding, ButtonFlags, ButtonData;
+            internal uint RawButtons; internal int X, Y; internal uint Extra;
+        }
+        [StructLayout(LayoutKind.Sequential)]
+        internal struct RawDeviceInfo
+        {
+            internal uint Size, Type, VendorId, ProductId, Version;
+            internal ushort UsagePage, Usage; internal uint Padding1, Padding2;
         }
         [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
         internal struct WindowClass
@@ -65,6 +88,10 @@ namespace AmtPtpControlPanel.WinUI3.Smoothing
         [DllImport("user32.dll")] internal static extern nint MonitorFromPoint(Point point, uint flags);
         [DllImport("user32.dll")] internal static extern int GetSystemMetrics(int index);
         [DllImport("user32.dll", SetLastError = true)] internal static extern uint SendInput(uint count, ref Input input, int size);
+        [DllImport("user32.dll", SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool RegisterRawInputDevices([In] RawInputDevice[] devices, uint count, uint size);
+        [DllImport("user32.dll", EntryPoint = "GetRawInputData")] internal static extern uint GetRawInputHeader(nint input, uint command, out RawHeader header, ref uint size, uint headerSize);
+        [DllImport("user32.dll", EntryPoint = "GetRawInputData")] internal static extern uint GetRawMouse(nint input, uint command, out RawMouse mouse, ref uint size, uint headerSize);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)] internal static extern uint GetRawInputDeviceInfoW(nint device, uint command, ref RawDeviceInfo info, ref uint size);
         [DllImport("user32.dll", SetLastError = true)] internal static extern uint MsgWaitForMultipleObjectsEx(uint count, [In] nint[] handles, uint timeout, uint mask, uint flags);
         [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool PeekMessageW(out Message message, nint window, uint first, uint last, uint remove);
         [DllImport("user32.dll")] internal static extern nint DispatchMessageW(ref Message message);

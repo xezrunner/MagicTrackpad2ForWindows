@@ -5,7 +5,7 @@
     <String id="Smoothing.Enable">Enable smoothing</String>
     <String id="Smoothing.Rate">Update rate</String>
     <String id="Smoothing.Automatic">Automatic (display)</String>
-    <String id="Smoothing.Scope">Affects all mice. Closing this window keeps smoothing in the tray.</String>
+    <String id="Smoothing.Scope">Applies only to the Magic Trackpad 2. Closing this window keeps smoothing in the tray.</String>
     <String id="Smoothing.Quit">Quit</String>
     <String id="Smoothing.TrayOpen">&amp;Open</String>
     <String id="Smoothing.TrayEnable">&amp;Enable smoothing</String>

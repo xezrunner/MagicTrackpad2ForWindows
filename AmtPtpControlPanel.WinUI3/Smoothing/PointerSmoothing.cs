@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
@@ -103,8 +104,12 @@ namespace AmtPtpControlPanel.WinUI3.Smoothing
             private nuint _pendingTag;
             private long _yieldUntil;
             private bool _rebaseAfterYield;
+            private bool _rawInput, _mouseActive;
+            private long _trackpadAt, _mouseAt;
+            private readonly Dictionary<nint, bool> _trackpads = new Dictionary<nint, bool>();
             private static readonly Guid DisplayStatus = new Guid("2b84c20e-ad23-4ddf-93db-05ffbd7efca5");
             private static readonly long StallTicks = Stopwatch.Frequency / 20;
+            private static readonly long DeviceHoldTicks = Stopwatch.Frequency * 3 / 20;
 
             internal Session(int rateHz) { _rateHz = rateHz; _hookProc = Hook; _windowProc = WindowMessage; }
             internal void Start()
@@ -163,6 +168,8 @@ namespace AmtPtpControlPanel.WinUI3.Smoothing
                 _sessionNotifications = true;
                 _power = Native.RegisterPowerSettingNotification(_window, DisplayStatus, 0);
                 Check(_power != 0);
+                Check(Native.RegisterRawInputDevices(RawInputDevices(Native.RawInputSink, _window), 2, (uint)Marshal.SizeOf<Native.RawInputDevice>()));
+                _rawInput = true;
 
                 nint desktop = Native.OpenInputDesktop(0, false, 1);
                 Check(desktop != 0);
@@ -176,10 +183,51 @@ namespace AmtPtpControlPanel.WinUI3.Smoothing
                 finally { Native.CloseDesktop(desktop); }
             }
 
+            private static Native.RawInputDevice[] RawInputDevices(uint flags, nint target) => new[]
+            {
+                new Native.RawInputDevice { UsagePage = Native.DigitizerPage, Usage = Native.TouchpadUsage, Flags = flags, Target = target },
+                new Native.RawInputDevice { UsagePage = Native.DesktopPage, Usage = Native.MouseUsage, Flags = flags, Target = target }
+            };
+
+            private void ReadRawInput(nint input)
+            {
+                uint size = Native.RawHeaderSize;
+                if (Native.GetRawInputHeader(input, Native.RawInputHeaderCommand, out var header, ref size, Native.RawHeaderSize) != Native.RawHeaderSize) return;
+                long now = Stopwatch.GetTimestamp();
+                if (header.Type == Native.RawHidType)
+                {
+                    if (IsTrackpad(header.Device)) _trackpadAt = now;
+                    return;
+                }
+                // NOTE: Windows reports PTP-generated and injected movement without a device handle. MT2FW exposes no mouse collection.
+                if (header.Type != Native.RawMouseType || header.Device == 0) return;
+                size = Native.RawMouseSize;
+                if (Native.GetRawMouse(input, Native.RawInputDataCommand, out var mouse, ref size, Native.RawHeaderSize) == Native.RawMouseSize &&
+                    (mouse.X != 0 || mouse.Y != 0))
+                    _mouseAt = now;
+            }
+
+            private bool IsTrackpad(nint device)
+            {
+                if (_trackpads.TryGetValue(device, out bool trackpad)) return trackpad;
+                var info = new Native.RawDeviceInfo { Size = Native.RawDeviceInfoSize };
+                uint size = Native.RawDeviceInfoSize;
+                if (Native.GetRawInputDeviceInfoW(device, Native.RawDeviceInfoCommand, ref info, ref size) != Native.RawDeviceInfoSize) return false;
+                trackpad = info.Type == Native.RawHidType && info.VendorId == Native.TrackpadVendor;
+                _trackpads[device] = trackpad;
+                return trackpad;
+            }
+
+            // NOTE: The hook carries no device identity. Hook callbacks can run before the matching WM_INPUT, so recent
+            // reports decide: smooth while the MT2 reports and no other mouse has moved.
+            private bool TrackpadInUse(long now) =>
+                _trackpadAt != 0 && now - _trackpadAt <= DeviceHoldTicks && (_mouseAt == 0 || now - _mouseAt > DeviceHoldTicks);
+
             private nint WindowMessage(nint window, uint message, nuint wParam, nint lParam)
             {
                 try
                 {
+                    if (message == Native.RawInput) ReadRawInput(lParam);
                     if (message == Native.DisplayChange) Stop(SmoothingStop.DisplayChanged);
                     if (message == Native.SessionChange && (wParam == 2 || wParam == 4 || wParam == 6 || wParam == 7)) Stop(SmoothingStop.SessionChanged);
                     if (message == Native.PowerBroadcast)
@@ -284,6 +332,13 @@ namespace AmtPtpControlPanel.WinUI3.Smoothing
                         {
                             long stamp = Stopwatch.GetTimestamp();
                             if (stamp < _yieldUntil) return Native.CallNextHookEx(0, code, message, data);
+                            if (!TrackpadInUse(stamp))
+                            {
+                                // NOTE: Another mouse owns the cursor. Retire any replacement and resume from its position later.
+                                if (message == Native.MouseMove) { _pending = false; _rebaseAfterYield = true; _mouseActive = true; }
+                                return Native.CallNextHookEx(0, code, message, data);
+                            }
+                            _mouseActive = false;
                             if (_rebaseAfterYield)
                             {
                                 _confirmed = Cursor();
@@ -349,7 +404,9 @@ namespace AmtPtpControlPanel.WinUI3.Smoothing
             {
                 try
                 {
-                    if (IntPtr.Size != 8 || Marshal.SizeOf<Native.Input>() != 40 || Marshal.SizeOf<Native.MouseHook>() != 32)
+                    if (IntPtr.Size != 8 || Marshal.SizeOf<Native.Input>() != 40 || Marshal.SizeOf<Native.MouseHook>() != 32 ||
+                        Marshal.SizeOf<Native.RawHeader>() != Native.RawHeaderSize || Marshal.SizeOf<Native.RawMouse>() != Native.RawMouseSize ||
+                        Marshal.SizeOf<Native.RawDeviceInfo>() != Native.RawDeviceInfoSize)
                         throw new PlatformNotSupportedException("64-bit input layout required");
                     _controller = Claim("controller");
                     _worker = Claim("worker");
@@ -412,7 +469,7 @@ namespace AmtPtpControlPanel.WinUI3.Smoothing
                         if (tick != 0)
                         {
                             if (now - tick > StallTicks) { Stop(SmoothingStop.ClockStall); break; }
-                            if (now < _yieldUntil) continue;
+                            if (now < _yieldUntil || _mouseActive) continue;
                             Pixel before = Cursor();
                             if (_rebaseAfterYield)
                             {
@@ -452,6 +509,7 @@ namespace AmtPtpControlPanel.WinUI3.Smoothing
                     if (_clockStarted) _clock!.Join();
                     if (_timer != 0 && !Native.CloseHandle(_timer)) { Retained = true; _retained = this; }
                     bool windowDestroyed = true;
+                    if (_rawInput) Native.RegisterRawInputDevices(RawInputDevices(Native.RawInputRemove, 0), 2, (uint)Marshal.SizeOf<Native.RawInputDevice>());
                     if (_power != 0) Native.UnregisterPowerSettingNotification(_power);
                     if (_sessionNotifications) Native.WTSUnRegisterSessionNotification(_window);
                     if (_window != 0) windowDestroyed = Native.DestroyWindow(_window);

@@ -118,7 +118,7 @@
                             <ComboBoxItem Content="500 Hz" Tag="500" />
                             <ComboBoxItem Content="1000 Hz" Tag="1000" />
                         </ComboBox>
-                        <TextBlock x:Name="SmoothingScope" Text="Affects all mice. Closing this window keeps smoothing in the tray."
+                        <TextBlock x:Name="SmoothingScope" Text="Applies only to the Magic Trackpad 2. Closing this window keeps smoothing in the tray."
                                    TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                         <TextBlock x:Name="SmoothingStatus" Text="Stopped" TextWrapping="Wrap"
                                    AutomationProperties.LiveSetting="Polite" />

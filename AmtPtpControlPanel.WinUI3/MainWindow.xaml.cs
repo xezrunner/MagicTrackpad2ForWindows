@@ -382,7 +382,7 @@ namespace AmtPtpControlPanel.WinUI3
             SmoothingToggle.Header = T("Smoothing.Enable", "Enable smoothing");
             SmoothingRate.Header = T("Smoothing.Rate", "Update rate");
             SmoothingAutomatic.Content = T("Smoothing.Automatic", "Automatic (display)");
-            SmoothingScope.Text = T("Smoothing.Scope", "Affects all mice. Closing this window keeps smoothing in the tray.");
+            SmoothingScope.Text = T("Smoothing.Scope", "Applies only to the Magic Trackpad 2. Closing this window keeps smoothing in the tray.");
             QuitButton.Content = T("Smoothing.Quit", "Quit");
             UpdateSmoothingStatus();
             UpdateBatteryButton.Content = T("ctlBatteryUpdate", "Update Battery");
