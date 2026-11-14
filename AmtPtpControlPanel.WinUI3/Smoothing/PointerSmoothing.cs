@@ -83,7 +83,7 @@ namespace AmtPtpControlPanel.WinUI3.Smoothing
         private bool _rebaseAfterYield;
 
         private bool _rawInput;
-        private bool _mouseActive;
+        private bool _passThrough;
         private long _trackpadAt;
         private long _mouseAt;
         private long _hookAt;
@@ -147,6 +147,15 @@ namespace AmtPtpControlPanel.WinUI3.Smoothing
         {
             Check(Native.GetPhysicalCursorPos(out Native.Point point));
             return new Pixel(point.X, point.Y);
+        }
+
+        // Games hide the cursor for mouselook and read raw input. Raw input still reports the moves the hook swallows,
+        // so replacements would reach the game as extra absolute 0-65535 positions, which many treat as relative movement.
+        private static bool CursorHidden()
+        {
+            Native.CursorInfo info = new Native.CursorInfo { Size = (uint)Marshal.SizeOf<Native.CursorInfo>() };
+            Check(Native.GetCursorInfo(ref info));
+            return (info.Flags & Native.CursorShowing) == 0 || info.Cursor == 0;
         }
 
         private void InitializeWindow()
@@ -417,19 +426,19 @@ namespace AmtPtpControlPanel.WinUI3.Smoothing
                         if (stamp < _yieldUntil)
                             return Native.CallNextHookEx(0, code, message, data);
 
-                        if (!TrackpadInUse(stamp))
+                        if (!TrackpadInUse(stamp) || CursorHidden())
                         {
-                            // Another mouse owns the cursor. Retire any replacement and resume from its position later.
+                            // Another mouse or a hidden cursor owns the movement. Retire any replacement and resume from the cursor later.
                             if (message == Native.MouseMove)
                             {
                                 _pending = false;
                                 _rebaseAfterYield = true;
-                                _mouseActive = true;
+                                _passThrough = true;
                             }
                             return Native.CallNextHookEx(0, code, message, data);
                         }
 
-                        _mouseActive = false;
+                        _passThrough = false;
                         if (_rebaseAfterYield)
                         {
                             _confirmed = Cursor();
@@ -600,7 +609,7 @@ namespace AmtPtpControlPanel.WinUI3.Smoothing
                             break;
                         }
 
-                        if (now < _yieldUntil || _mouseActive)
+                        if (now < _yieldUntil || _passThrough)
                             continue;
 
                         Pixel before = Cursor();
@@ -616,7 +625,13 @@ namespace AmtPtpControlPanel.WinUI3.Smoothing
                             break;
 
                         Pixel target = _motion.Sample(now);
-                        if (!_pending && target != before && Healthy(Stopwatch.GetTimestamp()))
+                        if (!_pending && target != before && CursorHidden())
+                        {
+                            // The cursor hid after this motion was queued. Drop it; the hook now passes movement through.
+                            _passThrough = true;
+                            _rebaseAfterYield = true;
+                        }
+                        else if (!_pending && target != before && Healthy(Stopwatch.GetTimestamp()))
                         {
                             packet.Mouse.X = Native.Normalize(target.X, _bounds.X, _bounds.Width);
                             packet.Mouse.Y = Native.Normalize(target.Y, _bounds.Y, _bounds.Height);

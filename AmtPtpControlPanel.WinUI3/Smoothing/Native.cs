@@ -48,6 +48,7 @@ namespace AmtPtpControlPanel.WinUI3.Smoothing
         internal const uint Injected = 1;
         internal const uint AbsoluteMove = 0x8000 | 0x4000 | 1;
         internal const uint MonitorDefaultToNull = 0;
+        internal const uint CursorShowing = 1;
 
         internal const uint RawInput = 0xff;
         internal const uint RawInputHeaderCommand = 0x10000005;
@@ -97,6 +98,15 @@ namespace AmtPtpControlPanel.WinUI3.Smoothing
         {
             internal int X;
             internal int Y;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        internal struct CursorInfo
+        {
+            internal uint Size;
+            internal uint Flags;
+            internal nint Cursor;
+            internal Point Position;
         }
 
         [StructLayout(LayoutKind.Sequential)]
@@ -238,6 +248,10 @@ namespace AmtPtpControlPanel.WinUI3.Smoothing
         [DllImport("user32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         internal static extern bool GetClipCursor(out Rect rect);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool GetCursorInfo(ref CursorInfo info);
 
         [DllImport("user32.dll")]
         internal static extern nint MonitorFromPoint(Point point, uint flags);
