@@ -5,7 +5,7 @@ using System.Threading;
 namespace AmtPtpControlPanel.WinUI3.Smoothing
 {
     /// <summary>
-    /// Win32 declarations shared by pointer smoothing and the tray.
+    /// Win32 declarations shared by pointer smoothing, trackpad input, and the tray.
     /// </summary>
     internal static class Native
     {
@@ -47,6 +47,8 @@ namespace AmtPtpControlPanel.WinUI3.Smoothing
 
         internal const uint Injected = 1;
         internal const uint AbsoluteMove = 0x8000 | 0x4000 | 1;
+        internal const uint RightDownInput = 0x8;
+        internal const uint RightUpInput = 0x10;
         internal const uint MonitorDefaultToNull = 0;
         internal const uint CursorShowing = 1;
 
@@ -54,6 +56,7 @@ namespace AmtPtpControlPanel.WinUI3.Smoothing
         internal const uint RawInputHeaderCommand = 0x10000005;
         internal const uint RawInputDataCommand = 0x10000003;
         internal const uint RawDeviceInfoCommand = 0x2000000b;
+        internal const uint PreparsedDataCommand = 0x20000005;
         internal const uint RawMouseType = 0;
         internal const uint RawHidType = 2;
         internal const uint RawInputSink = 0x100;
@@ -68,6 +71,11 @@ namespace AmtPtpControlPanel.WinUI3.Smoothing
         internal const ushort TouchpadUsage = 0x05;
         internal const ushort DesktopPage = 0x01;
         internal const ushort MouseUsage = 0x02;
+        internal const ushort ButtonPage = 0x09;
+        internal const ushort TipSwitchUsage = 0x42;
+        internal const int HidInputReport = 0;
+        internal const int HidSuccess = 0x00110000;
+        internal const nint MessageOnlyParent = -3;
 
         internal static nuint NextInputTag()
         {
@@ -204,6 +212,13 @@ namespace AmtPtpControlPanel.WinUI3.Smoothing
             internal uint Padding2;
         }
 
+        [StructLayout(LayoutKind.Sequential)]
+        internal struct UsageAndPage
+        {
+            internal ushort Usage;
+            internal ushort UsagePage;
+        }
+
         [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
         internal struct WindowClass
         {
@@ -272,8 +287,25 @@ namespace AmtPtpControlPanel.WinUI3.Smoothing
         [DllImport("user32.dll", EntryPoint = "GetRawInputData")]
         internal static extern uint GetRawMouse(nint input, uint command, out RawMouse mouse, ref uint size, uint headerSize);
 
+        [DllImport("user32.dll", EntryPoint = "GetRawInputData")]
+        internal static extern uint GetRawInputBytes(nint input, uint command, byte[]? data, ref uint size, uint headerSize);
+
         [DllImport("user32.dll", CharSet = CharSet.Unicode)]
         internal static extern uint GetRawInputDeviceInfoW(nint device, uint command, ref RawDeviceInfo info, ref uint size);
+
+        [DllImport("user32.dll", EntryPoint = "GetRawInputDeviceInfoW")]
+        internal static extern uint GetRawInputDeviceBytes(nint device, uint command, byte[]? data, ref uint size);
+
+        [DllImport("hid.dll")]
+        internal static extern int HidP_GetUsagesEx(int reportType, ushort linkCollection, [Out] UsageAndPage[] usages, ref uint length,
+            byte[] preparsedData, ref byte report, uint reportLength);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        internal static extern int GetMessageW(out Message message, nint window, uint first, uint last);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool PostMessageW(nint window, uint message, nuint wParam, nint lParam);
 
         [DllImport("user32.dll", SetLastError = true)]
         internal static extern uint MsgWaitForMultipleObjectsEx(uint count, [In] nint[] handles, uint timeout, uint mask, uint flags);

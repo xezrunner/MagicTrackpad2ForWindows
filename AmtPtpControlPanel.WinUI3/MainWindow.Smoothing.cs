@@ -12,6 +12,7 @@ using Microsoft.Windows.AppLifecycle;
 using Windows.ApplicationModel.Core;
 using Windows.ApplicationModel.DataTransfer;
 using WinRT.Interop;
+using AmtPtpControlPanel.WinUI3.Input;
 using AmtPtpControlPanel.WinUI3.Smoothing;
 
 namespace AmtPtpControlPanel.WinUI3
@@ -42,6 +43,7 @@ namespace AmtPtpControlPanel.WinUI3
 
         private void LoadSmoothing()
         {
+            TrackpadInput.Start();
             if (_smoothingAvailable)
                 SmoothingPowerPolicy.Apply();
 

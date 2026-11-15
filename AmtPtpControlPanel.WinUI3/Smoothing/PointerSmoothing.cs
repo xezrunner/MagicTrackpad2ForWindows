@@ -1,11 +1,11 @@
 using System;
-using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
+using AmtPtpControlPanel.WinUI3.Input;
 
 namespace AmtPtpControlPanel.WinUI3.Smoothing
 {
@@ -84,12 +84,10 @@ namespace AmtPtpControlPanel.WinUI3.Smoothing
 
         private bool _rawInput;
         private bool _passThrough;
-        private long _trackpadAt;
         private long _mouseAt;
         private long _hookAt;
         private int _unhookedMoves;
         private Pixel _unhookedCursor;
-        private readonly Dictionary<nint, bool> _trackpads = new Dictionary<nint, bool>();
 
         private static readonly long StallTicks = Stopwatch.Frequency / 20;
         private static readonly long DeviceHoldTicks = Stopwatch.Frequency * 3 / 20;
@@ -178,7 +176,7 @@ namespace AmtPtpControlPanel.WinUI3.Smoothing
             _sessionNotifications = true;
             _power = Native.RegisterPowerSettingNotification(_window, Native.DisplayStatus, 0);
             Check(_power != 0);
-            Check(Native.RegisterRawInputDevices(RawInputDevices(Native.RawInputSink, _window), 2, (uint)Marshal.SizeOf<Native.RawInputDevice>()));
+            Check(Native.RegisterRawInputDevices(RawInputDevices(Native.RawInputSink, _window), 1, (uint)Marshal.SizeOf<Native.RawInputDevice>()));
             _rawInput = true;
 
             nint desktop = Native.OpenInputDesktop(0, false, 1);
@@ -197,11 +195,11 @@ namespace AmtPtpControlPanel.WinUI3.Smoothing
             }
         }
 
+        // TrackpadInput owns the trackpad registration, because a process gets one raw-input window per device type.
         private static Native.RawInputDevice[] RawInputDevices(uint flags, nint target)
         {
             return new Native.RawInputDevice[]
             {
-                new Native.RawInputDevice { UsagePage = Native.DigitizerPage, Usage = Native.TouchpadUsage, Flags = flags, Target = target },
                 new Native.RawInputDevice { UsagePage = Native.DesktopPage, Usage = Native.MouseUsage, Flags = flags, Target = target }
             };
         }
@@ -213,13 +211,6 @@ namespace AmtPtpControlPanel.WinUI3.Smoothing
                 return;
 
             long now = Stopwatch.GetTimestamp();
-            if (header.Type == Native.RawHidType)
-            {
-                if (IsTrackpad(header.Device))
-                    _trackpadAt = now;
-                return;
-            }
-
             size = Native.RawMouseSize;
             if (header.Type != Native.RawMouseType ||
                 Native.GetRawMouse(input, Native.RawInputDataCommand, out Native.RawMouse mouse, ref size, Native.RawHeaderSize) != Native.RawMouseSize ||
@@ -247,26 +238,12 @@ namespace AmtPtpControlPanel.WinUI3.Smoothing
             }
         }
 
-        private bool IsTrackpad(nint device)
-        {
-            if (_trackpads.TryGetValue(device, out bool trackpad))
-                return trackpad;
-
-            Native.RawDeviceInfo info = new Native.RawDeviceInfo { Size = Native.RawDeviceInfoSize };
-            uint size = Native.RawDeviceInfoSize;
-            if (Native.GetRawInputDeviceInfoW(device, Native.RawDeviceInfoCommand, ref info, ref size) != Native.RawDeviceInfoSize)
-                return false;
-
-            trackpad = info.Type == Native.RawHidType && info.VendorId == Native.TrackpadVendor;
-            _trackpads[device] = trackpad;
-            return trackpad;
-        }
-
         // The hook carries no device identity. Hook callbacks can run before the matching WM_INPUT, so recent
         // reports decide: smooth while the MT2 reports and no other mouse has moved.
         private bool TrackpadInUse(long now)
         {
-            return _trackpadAt != 0 && now - _trackpadAt <= DeviceHoldTicks && (_mouseAt == 0 || now - _mouseAt > DeviceHoldTicks);
+            long trackpadAt = TrackpadInput.LastReportAt;
+            return trackpadAt != 0 && now - trackpadAt <= DeviceHoldTicks && (_mouseAt == 0 || now - _mouseAt > DeviceHoldTicks);
         }
 
         private nint WindowMessage(nint window, uint message, nuint wParam, nint lParam)
@@ -683,7 +660,7 @@ namespace AmtPtpControlPanel.WinUI3.Smoothing
                     retained = true;
 
                 if (_rawInput)
-                    Native.RegisterRawInputDevices(RawInputDevices(Native.RawInputRemove, 0), 2, (uint)Marshal.SizeOf<Native.RawInputDevice>());
+                    Native.RegisterRawInputDevices(RawInputDevices(Native.RawInputRemove, 0), 1, (uint)Marshal.SizeOf<Native.RawInputDevice>());
 
                 if (_power != 0)
                     Native.UnregisterPowerSettingNotification(_power);
